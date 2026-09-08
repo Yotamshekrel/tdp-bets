@@ -226,7 +226,7 @@ export const ResultsPage: React.FC<ResultsPageProps> = ({ onShowToast }) => {
     return rosters;
   }, [memberStats]);
 
-  // חישוב ציונים ודירוג מהמרים
+  // חישוב ציונים ודירוג מהמרים לפי Dense Ranking (שוויון ניקוד מקבל את אותו המקום בדיוק)
   const rankedBettors = useMemo(() => {
     if (!isOfficialPublished || !officialResults) return [];
 
@@ -256,8 +256,25 @@ export const ResultsPage: React.FC<ResultsPageProps> = ({ onShowToast }) => {
       };
     });
 
+    // מיון לפי כמות הפגיעות בסדר יורד
     scores.sort((a, b) => b.correctCount - a.correctCount);
-    return scores;
+
+    // חישוב מקום (Dense Ranking):
+    // שוויון באחוזים / פגיעות מקבל את אותו המקום, והמקום הבא ברשימה הוא המקום העוקב
+    let currentRank = 0;
+    let prevScore = -1;
+
+    return scores.map((item) => {
+      if (item.correctCount !== prevScore) {
+        currentRank += 1;
+        prevScore = item.correctCount;
+      }
+
+      return {
+        ...item,
+        rank: currentRank,
+      };
+    });
   }, [bets, officialResults, isOfficialPublished]);
 
   const filteredBets = bets.filter((bet) =>
@@ -419,7 +436,7 @@ export const ResultsPage: React.FC<ResultsPageProps> = ({ onShowToast }) => {
                   דירוג המנחשים לפי תוצאות האמת
                 </h3>
                 <p className="text-xs text-slate-400">
-                  הציון מחושב לפי כמות השיבוצים המדויקת מתוך 18 חברי המחזור
+                  משתתפים עם אותם אחוזי הצלחה חולקים את אותו המקום בדיוק
                 </p>
               </div>
               <span className="text-xs text-amber-400 bg-amber-500/10 px-3 py-1.5 rounded-xl border border-amber-500/20 font-bold">
@@ -428,8 +445,8 @@ export const ResultsPage: React.FC<ResultsPageProps> = ({ onShowToast }) => {
             </div>
 
             <div className="space-y-3">
-              {rankedBettors.map((item, index) => {
-                const rank = index + 1;
+              {rankedBettors.map((item) => {
+                const rank = item.rank;
                 const isExpanded = expandedBettor === item.bettorName;
 
                 const medalColor =
@@ -465,6 +482,16 @@ export const ResultsPage: React.FC<ResultsPageProps> = ({ onShowToast }) => {
                             {rank === 1 && (
                               <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold">
                                 מקום ראשון!
+                              </span>
+                            )}
+                            {rank === 2 && (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-400/20 text-slate-200 border border-slate-400/30 font-bold">
+                                מקום שני
+                              </span>
+                            )}
+                            {rank === 3 && (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-700/20 text-amber-300 border border-amber-700/30 font-bold">
+                                מקום שלישי
                               </span>
                             )}
                           </div>
