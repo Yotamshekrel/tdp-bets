@@ -1,19 +1,41 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { Header } from '../components/Header';
 import { LoadingSpinner } from '../components/LoadingSpinner';
 import { subscribeToBets } from '../services/db-service';
-import { BetDocument, Team, ToastMessage } from '../types';
-import { TDP_MEMBERS, TEAM_STYLES } from '../constants/config';
-import { Users, Search } from 'lucide-react';
+import { BetDocument, Team, TDPMember, ToastMessage } from '../types';
+import { TDP_MEMBERS, TEAMS, TEAM_STYLES } from '../constants/config';
+import {
+  Users,
+  Search,
+  BarChart3,
+  Table as TableIcon,
+  Crown,
+  Layers,
+  UserCheck,
+  TrendingUp,
+} from 'lucide-react';
 
 interface ResultsPageProps {
   onShowToast: (toast: Omit<ToastMessage, 'id'>) => void;
 }
 
+type MainTab = 'summary' | 'table';
+type SummarySubTab = 'roster' | 'consensus' | 'breakdown';
+
 export const ResultsPage: React.FC<ResultsPageProps> = ({ onShowToast }) => {
   const [bets, setBets] = useState<BetDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // ראשי: ניתוח מול טבלה
+  const [mainTab, setMainTab] = useState<MainTab>('summary');
+  const [summarySubTab, setSummarySubTab] = useState<SummarySubTab>('roster');
+
+  // סינון חטיבה עבור תצוגת שיבוץ
+  const [selectedTeamFilter, setSelectedTeamFilter] = useState<Team | 'ALL'>('ALL');
+
+  // חבר נבחר עבור גרף העמודות
+  const [selectedMember, setSelectedMember] = useState<TDPMember>(TDP_MEMBERS[0]);
 
   useEffect(() => {
     const unsubscribe = subscribeToBets(
@@ -34,106 +56,621 @@ export const ResultsPage: React.FC<ResultsPageProps> = ({ onShowToast }) => {
     return () => unsubscribe();
   }, []);
 
+  // חישוב קולות, אחוזים ומובילים לכל חבר
+  const memberStats = useMemo(() => {
+    const stats: Record<
+      string,
+      {
+        totalVotes: number;
+        counts: Record<Team, number>;
+        percentages: Record<Team, number>;
+        leadingTeams: Team[];
+        maxVotes: number;
+      }
+    > = {};
+
+    TDP_MEMBERS.forEach((member) => {
+      const counts: Record<Team, number> = {
+        Consumer: 0,
+        Levelup: 0,
+        Netcom: 0,
+        Artemis: 0,
+        Dispatch: 0,
+      };
+
+      let total = 0;
+      bets.forEach((bet) => {
+        const team = bet.predictions?.[member];
+        if (team && counts[team] !== undefined) {
+          counts[team]++;
+          total++;
+        }
+      });
+
+      const percentages: Record<Team, number> = {
+        Consumer: 0,
+        Levelup: 0,
+        Netcom: 0,
+        Artemis: 0,
+        Dispatch: 0,
+      };
+
+      let maxVotes = 0;
+      TEAMS.forEach((team) => {
+        if (counts[team] > maxVotes) {
+          maxVotes = counts[team];
+        }
+        percentages[team] = total > 0 ? Math.round((counts[team] / total) * 100) : 0;
+      });
+
+      const leadingTeams: Team[] = [];
+      if (maxVotes > 0) {
+        TEAMS.forEach((team) => {
+          if (counts[team] === maxVotes) {
+            leadingTeams.push(team);
+          }
+        });
+      }
+
+      stats[member] = {
+        totalVotes: total,
+        counts,
+        percentages,
+        leadingTeams,
+        maxVotes,
+      };
+    });
+
+    return stats;
+  }, [bets]);
+
+  // שיבוץ לחטיבה לפי ההימור הגבוה ביותר
+  const projectedRosters = useMemo(() => {
+    const rosters: Record<Team, Array<{ member: TDPMember; votes: number; total: number; percentage: number; isTie: boolean }>> = {
+      Consumer: [],
+      Levelup: [],
+      Netcom: [],
+      Artemis: [],
+      Dispatch: [],
+    };
+
+    TDP_MEMBERS.forEach((member) => {
+      const data = memberStats[member];
+      if (data.leadingTeams.length > 0) {
+        data.leadingTeams.forEach((team) => {
+          rosters[team].push({
+            member,
+            votes: data.maxVotes,
+            total: data.totalVotes,
+            percentage: data.percentages[team],
+            isTie: data.leadingTeams.length > 1,
+          });
+        });
+      }
+    });
+
+    return rosters;
+  }, [memberStats]);
+
   const filteredBets = bets.filter((bet) =>
     bet.bettorName.toLowerCase().includes(searchQuery.toLowerCase().trim())
   );
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col pb-16">
       <Header
         title="Live Prediction Results"
         subtitle={`${bets.length} total ${bets.length === 1 ? 'bettor' : 'bettors'}`}
       />
 
-      <main className="max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 flex-1 flex flex-col gap-4">
-        {/* Top Control Bar */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="relative w-full sm:w-72">
-            <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search bettor name..."
-              className="w-full pl-10 pr-4 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs sm:text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
+      <main className="max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 flex-1 flex flex-col gap-6">
+        {/* מתג ראשי: ניתוח מול טבלה מלאה */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 border-b border-slate-800 pb-4">
+          <div className="flex bg-slate-800 p-1 rounded-xl border border-slate-700 w-full sm:w-auto">
+            <button
+              onClick={() => setMainTab('summary')}
+              className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all ${
+                mainTab === 'summary'
+                  ? 'bg-indigo-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <BarChart3 className="w-4 h-4" />
+              סיכום ותובנות (Analytics)
+            </button>
+            <button
+              onClick={() => setMainTab('table')}
+              className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all ${
+                mainTab === 'table'
+                  ? 'bg-indigo-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <TableIcon className="w-4 h-4" />
+              טבלה מלאה (Full Grid)
+            </button>
           </div>
-          <div className="text-xs text-slate-400 flex items-center gap-1.5 self-end sm:self-auto">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            Real-time synced
+
+          <div className="text-xs text-slate-400 flex items-center gap-2 self-end sm:self-auto">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+            סנכרון בזמן אמת ({bets.length} הצבעות)
           </div>
         </div>
 
         {loading ? (
-          <LoadingSpinner message="Syncing predictions from Firestore..." />
+          <LoadingSpinner message="טוען נתונים מ-Firestore..." />
         ) : bets.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 bg-slate-800/40 rounded-2xl border border-slate-800">
             <Users className="w-12 h-12 text-slate-600 mb-3" />
-            <p className="text-base font-semibold text-slate-300">No bets placed yet</p>
-            <p className="text-xs text-slate-500 mt-1">Be the first to submit your predictions!</p>
+            <p className="text-base font-semibold text-slate-300">עדיין לא נרשמו הימורים</p>
+            <p className="text-xs text-slate-500 mt-1">היה הראשון להזין הימור!</p>
+          </div>
+        ) : mainTab === 'summary' ? (
+          /* ============================================================ */
+          /*                       סיכומים וניתוח                         */
+          /* ============================================================ */
+          <div className="space-y-6">
+            {/* לשוניות משנה */}
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setSummarySubTab('roster')}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold border transition-all ${
+                  summarySubTab === 'roster'
+                    ? 'bg-slate-800 border-indigo-500 text-indigo-400 shadow-sm'
+                    : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700'
+                }`}
+              >
+                <Layers className="w-4 h-4" />
+                שיבוץ צפוי לפי חטיבה (Rosters)
+              </button>
+              <button
+                onClick={() => setSummarySubTab('consensus')}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold border transition-all ${
+                  summarySubTab === 'consensus'
+                    ? 'bg-slate-800 border-indigo-500 text-indigo-400 shadow-sm'
+                    : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700'
+                }`}
+              >
+                <Crown className="w-4 h-4" />
+                הימור מוביל לכל חבר (Consensus)
+              </button>
+              <button
+                onClick={() => setSummarySubTab('breakdown')}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold border transition-all ${
+                  summarySubTab === 'breakdown'
+                    ? 'bg-slate-800 border-indigo-500 text-indigo-400 shadow-sm'
+                    : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700'
+                }`}
+              >
+                <TrendingUp className="w-4 h-4" />
+                גרף עמודות לחבר ספציפי (Bar Chart)
+              </button>
+            </div>
+
+            {/* --- חלק 1: שיבוץ צפוי לפי חטיבה --- */}
+            {summarySubTab === 'roster' && (
+              <div className="space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-800/60 p-4 rounded-2xl border border-slate-800">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-100">
+                      חלוקה לחטיבות לפי ההימור המוביל
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      כל חבר TDP משובץ לחטיבה שקיבלה עבורו את מירב הקולות
+                    </p>
+                  </div>
+
+                  {/* בחירת חטיבה לסינון */}
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      onClick={() => setSelectedTeamFilter('ALL')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                        selectedTeamFilter === 'ALL'
+                          ? 'bg-indigo-600 text-white border-indigo-500'
+                          : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-slate-200'
+                      }`}
+                    >
+                      הכל (5 חטיבות)
+                    </button>
+                    {TEAMS.map((team) => {
+                      const isSelected = selectedTeamFilter === team;
+                      const style = TEAM_STYLES[team];
+                      return (
+                        <button
+                          key={team}
+                          onClick={() => setSelectedTeamFilter(team)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                            isSelected
+                              ? style.active
+                              : `${style.bg} ${style.text} ${style.border}`
+                          }`}
+                        >
+                          {team} ({projectedRosters[team].length})
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* רשת כרטיסי חטיבות */}
+                <div
+                  className={`grid gap-4 ${
+                    selectedTeamFilter === 'ALL'
+                      ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
+                      : 'grid-cols-1'
+                  }`}
+                >
+                  {(selectedTeamFilter === 'ALL' ? TEAMS : [selectedTeamFilter]).map((team) => {
+                    const roster = projectedRosters[team];
+                    const style = TEAM_STYLES[team];
+
+                    return (
+                      <div
+                        key={team}
+                        className="bg-slate-800/80 border border-slate-700/80 rounded-2xl p-5 flex flex-col shadow-sm"
+                      >
+                        <div className="flex items-center justify-between pb-3 border-b border-slate-700 mb-4">
+                          <span
+                            className={`px-3 py-1 rounded-lg text-xs font-bold border ${style.bg} ${style.text} ${style.border}`}
+                          >
+                            {team}
+                          </span>
+                          <span className="text-xs font-semibold text-slate-400">
+                            {roster.length} {roster.length === 1 ? 'חבר צפוי' : 'חברים צפויים'}
+                          </span>
+                        </div>
+
+                        {roster.length === 0 ? (
+                          <p className="text-xs text-slate-500 italic py-6 text-center">
+                            אין חברים שזהו ההימור המוביל עבורם
+                          </p>
+                        ) : (
+                          <div className="space-y-2.5 flex-1">
+                            {roster.map(({ member, votes, total, percentage, isTie }) => (
+                              <div
+                                key={member}
+                                className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 hover:border-slate-700 transition-colors"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    dir="rtl"
+                                    className="text-sm font-bold text-slate-200"
+                                  >
+                                    {member}
+                                  </span>
+                                  {isTie && (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                      תיקו
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-right">
+                                  <span className="text-xs font-mono font-bold text-indigo-400">
+                                    {percentage}%
+                                  </span>
+                                  <span className="text-[11px] text-slate-500 ml-1">
+                                    ({votes}/{total})
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* --- חלק 2: ההימור המוביל לכל חבר --- */}
+            {summarySubTab === 'consensus' && (
+              <div className="space-y-4">
+                <div className="bg-slate-800/60 p-4 rounded-2xl border border-slate-800">
+                  <h3 className="text-sm font-bold text-slate-100">
+                    ההימור המוביל עבור כל אחד מ-18 חברי ה-TDP
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    תמונת מצב מרוכזת של החטיבה בעלת הסיכוי הגבוה ביותר על פי קולות המשתתפים
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {TDP_MEMBERS.map((member) => {
+                    const stat = memberStats[member];
+                    const hasVotes = stat.totalVotes > 0;
+                    const isTie = stat.leadingTeams.length > 1;
+
+                    return (
+                      <div
+                        key={member}
+                        className="p-4 rounded-2xl bg-slate-800/80 border border-slate-700 flex flex-col justify-between gap-3 shadow-sm hover:border-slate-600 transition-colors"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <UserCheck className="w-4 h-4 text-indigo-400" />
+                            <span dir="rtl" className="text-base font-bold text-slate-100">
+                              {member}
+                            </span>
+                          </div>
+                          <span className="text-xs text-slate-500 font-mono">
+                            {stat.totalVotes} הצבעות
+                          </span>
+                        </div>
+
+                        {hasVotes ? (
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-slate-400">
+                                {isTie ? 'תיקו מוביל בין:' : 'הימור מוביל:'}
+                              </span>
+                              <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                                {stat.leadingTeams.map((team) => {
+                                  const style = TEAM_STYLES[team];
+                                  return (
+                                    <span
+                                      key={team}
+                                      className={`px-2 py-0.5 rounded-lg text-xs font-bold border ${style.bg} ${style.text} ${style.border}`}
+                                    >
+                                      {team}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            {/* פס התפלגות קולות */}
+                            <div className="h-2 w-full bg-slate-900 rounded-full overflow-hidden flex">
+                              {TEAMS.map((team) => {
+                                const percent = stat.percentages[team];
+                                if (percent === 0) return null;
+                                const colorMap: Record<Team, string> = {
+                                  Consumer: 'bg-blue-500',
+                                  Levelup: 'bg-purple-500',
+                                  Netcom: 'bg-emerald-500',
+                                  Artemis: 'bg-amber-500',
+                                  Dispatch: 'bg-rose-500',
+                                };
+                                return (
+                                  <div
+                                    key={team}
+                                    style={{ width: `${percent}%` }}
+                                    title={`${team}: ${stat.counts[team]} votes (${percent}%)`}
+                                    className={`${colorMap[team]}`}
+                                  />
+                                );
+                              })}
+                            </div>
+
+                            <div className="flex justify-between text-[11px] text-slate-400 pt-0.5">
+                              <span>קונצנזוס:</span>
+                              <span className="font-semibold text-slate-200">
+                                {stat.leadingTeams.map((t) => stat.percentages[t]).join(' / ')}%
+                                ({stat.maxVotes} מתוך {stat.totalVotes})
+                              </span>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-xs text-slate-500 italic">טרם הוזנו הצבעות</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* --- חלק 3: גרף עמודות לחבר ספציפי --- */}
+            {summarySubTab === 'breakdown' && (
+              <div className="space-y-6">
+                <div className="bg-slate-800/60 p-4 rounded-2xl border border-slate-800 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-100">
+                        גרף עמודות ופירוט הצבעות לפי שם
+                      </h3>
+                      <p className="text-xs text-slate-400">
+                        בחר חבר TDP כדי לראות את התפלגות כל 5 האופציות
+                      </p>
+                    </div>
+
+                    <div className="text-xs text-slate-400">
+                      נבחר: <strong className="text-indigo-400">{selectedMember}</strong>
+                    </div>
+                  </div>
+
+                  {/* סרגל בחירת שמות */}
+                  <div className="flex gap-2 overflow-x-auto pb-2 pt-1 no-scrollbar">
+                    {TDP_MEMBERS.map((member) => {
+                      const isSelected = selectedMember === member;
+                      const stat = memberStats[member];
+                      return (
+                        <button
+                          key={member}
+                          onClick={() => setSelectedMember(member)}
+                          className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all border ${
+                            isSelected
+                              ? 'bg-indigo-600 border-indigo-500 text-white shadow-md shadow-indigo-600/30'
+                              : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'
+                          }`}
+                        >
+                          <span dir="rtl">{member}</span>
+                          <span className="ml-1 text-[10px] opacity-70">
+                            ({stat.totalVotes})
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* כרטיסיית הגרף */}
+                {(() => {
+                  const stat = memberStats[selectedMember];
+                  const hasVotes = stat.totalVotes > 0;
+
+                  return (
+                    <div className="p-6 rounded-2xl bg-slate-800/90 border border-slate-700 shadow-xl space-y-6">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-700">
+                        <div>
+                          <div className="flex items-center gap-3">
+                            <span dir="rtl" className="text-2xl font-black text-white">
+                              {selectedMember}
+                            </span>
+                            {stat.leadingTeams.length > 0 && (
+                              <div className="flex items-center gap-1.5">
+                                <Crown className="w-4 h-4 text-amber-400" />
+                                <span className="text-xs font-semibold text-amber-400">
+                                  ההימור המוביל: {stat.leadingTeams.join(' / ')}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-400 mt-1">
+                            סה״כ {stat.totalVotes} הצבעות נרשמו עבור {selectedMember}
+                          </p>
+                        </div>
+                      </div>
+
+                      {!hasVotes ? (
+                        <p className="text-sm text-slate-500 italic text-center py-8">
+                          אין עדיין הצבעות עבור {selectedMember}
+                        </p>
+                      ) : (
+                        <div className="space-y-4">
+                          {TEAMS.map((team) => {
+                            const count = stat.counts[team];
+                            const percentage = stat.percentages[team];
+                            const isLeading = stat.leadingTeams.includes(team);
+                            const style = TEAM_STYLES[team];
+
+                            const colorBar: Record<Team, string> = {
+                              Consumer: 'bg-blue-500',
+                              Levelup: 'bg-purple-500',
+                              Netcom: 'bg-emerald-500',
+                              Artemis: 'bg-amber-500',
+                              Dispatch: 'bg-rose-500',
+                            };
+
+                            return (
+                              <div key={team} className="space-y-1.5">
+                                <div className="flex items-center justify-between text-xs sm:text-sm">
+                                  <div className="flex items-center gap-2">
+                                    <span
+                                      className={`px-2.5 py-0.5 rounded-lg text-xs font-bold border ${style.bg} ${style.text} ${style.border}`}
+                                    >
+                                      {team}
+                                    </span>
+                                    {isLeading && (
+                                      <span className="text-[11px] font-semibold text-emerald-400 flex items-center gap-1">
+                                        ★ מוביל
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-slate-400 text-xs">
+                                      {count} {count === 1 ? 'הצבעה' : 'הצבעות'}
+                                    </span>
+                                    <span className="font-mono font-bold text-slate-200 w-12 text-right">
+                                      {percentage}%
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <div className="h-4 w-full bg-slate-900/90 rounded-xl overflow-hidden p-0.5 border border-slate-800">
+                                  <div
+                                    style={{ width: `${percentage}%` }}
+                                    className={`h-full rounded-lg transition-all duration-500 ${colorBar[team]} ${
+                                      isLeading ? 'brightness-110 shadow-sm' : 'opacity-80'
+                                    }`}
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
           </div>
         ) : (
-          /* Responsive Table Container with Sticky First Column */
-          <div className="border border-slate-800 rounded-2xl overflow-hidden bg-slate-850 shadow-xl">
-            <div className="overflow-x-auto max-h-[75vh]">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-slate-800/90 border-b border-slate-700">
-                    <th
-                      scope="col"
-                      className="sticky left-0 z-20 bg-slate-800/95 backdrop-blur px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-300 min-w-[140px] sm:min-w-[180px] shadow-[2px_0_5px_rgba(0,0,0,0.3)]"
-                    >
-                      Bettor
-                    </th>
-                    {TDP_MEMBERS.map((member) => (
+          /* ============================================================ */
+          /*                       טבלה מלאה                              */
+          /* ============================================================ */
+          <div className="space-y-4">
+            <div className="relative w-full sm:w-80">
+              <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="חפש לפי שם מהמר..."
+                className="w-full pl-10 pr-4 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs sm:text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+
+            <div className="border border-slate-800 rounded-2xl overflow-hidden bg-slate-850 shadow-xl">
+              <div className="overflow-x-auto max-h-[75vh]">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-800/90 border-b border-slate-700">
                       <th
-                        key={member}
                         scope="col"
-                        dir="rtl"
-                        className="px-3 py-3.5 text-xs font-bold text-slate-200 text-center min-w-[95px] whitespace-nowrap border-l border-slate-800/60"
+                        className="sticky left-0 z-20 bg-slate-800/95 backdrop-blur px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-slate-300 min-w-[140px] sm:min-w-[180px] shadow-[2px_0_5px_rgba(0,0,0,0.3)]"
                       >
-                        {member}
+                        Bettor
                       </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800 text-xs">
-                  {filteredBets.map((bet) => (
-                    <tr
-                      key={bet.bettorName}
-                      className="hover:bg-slate-800/40 transition-colors group"
-                    >
-                      {/* Sticky Bettor Column */}
-                      <td className="sticky left-0 z-10 bg-slate-900 group-hover:bg-slate-850 px-4 py-3 font-semibold text-slate-100 whitespace-nowrap shadow-[2px_0_5px_rgba(0,0,0,0.3)]">
-                        {bet.bettorName}
-                      </td>
-
-                      {/* Prediction Cells */}
-                      {TDP_MEMBERS.map((member) => {
-                        const team = bet.predictions?.[member] as Team | undefined;
-                        const style = team ? TEAM_STYLES[team] : null;
-
-                        return (
-                          <td
-                            key={member}
-                            className="px-2 py-3 text-center border-l border-slate-800/40 whitespace-nowrap"
-                          >
-                            {team && style ? (
-                              <span
-                                className={`inline-block px-2.5 py-1 rounded-lg font-medium border text-[11px] ${style.bg} ${style.text} ${style.border}`}
-                              >
-                                {team}
-                              </span>
-                            ) : (
-                              <span className="text-slate-600 text-[11px]">-</span>
-                            )}
-                          </td>
-                        );
-                      })}
+                      {TDP_MEMBERS.map((member) => (
+                        <th
+                          key={member}
+                          scope="col"
+                          dir="rtl"
+                          className="px-3 py-3.5 text-xs font-bold text-slate-200 text-center min-w-[95px] whitespace-nowrap border-l border-slate-800/60"
+                        >
+                          {member}
+                        </th>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800 text-xs">
+                    {filteredBets.map((bet) => (
+                      <tr
+                        key={bet.bettorName}
+                        className="hover:bg-slate-800/40 transition-colors group"
+                      >
+                        <td className="sticky left-0 z-10 bg-slate-900 group-hover:bg-slate-850 px-4 py-3 font-semibold text-slate-100 whitespace-nowrap shadow-[2px_0_5px_rgba(0,0,0,0.3)]">
+                          {bet.bettorName}
+                        </td>
+
+                        {TDP_MEMBERS.map((member) => {
+                          const team = bet.predictions?.[member] as Team | undefined;
+                          const style = team ? TEAM_STYLES[team] : null;
+
+                          return (
+                            <td
+                              key={member}
+                              className="px-2 py-3 text-center border-l border-slate-800/40 whitespace-nowrap"
+                            >
+                              {team && style ? (
+                                <span
+                                  className={`inline-block px-2.5 py-1 rounded-lg font-medium border text-[11px] ${style.bg} ${style.text} ${style.border}`}
+                                >
+                                  {team}
+                                </span>
+                              ) : (
+                                <span className="text-slate-600 text-[11px]">-</span>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
