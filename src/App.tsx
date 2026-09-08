@@ -27,7 +27,7 @@ export const App: React.FC = () => {
       <div className="min-h-screen bg-slate-900 text-slate-100">
         <ToastContainer toasts={toasts} onDismiss={removeToast} />
         <Routes>
-          <Route path="/" element={<HomePage />} />
+          <Route path="/" element={<HomePage onShowToast={addToast} />} />
           <Route path="/bet" element={<BetPage onShowToast={addToast} />} />
           <Route path="/results" element={<ResultsPage onShowToast={addToast} />} />
         </Routes>

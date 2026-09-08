@@ -3,6 +3,7 @@ import {
   doc,
   getDoc,
   setDoc,
+  deleteDoc,
   onSnapshot,
   serverTimestamp,
   query,
@@ -14,16 +15,10 @@ import { BetDocument, Team } from '../types';
 
 const BETS_COLLECTION = 'bets';
 
-/**
- * Normalizes bettor names for deterministic Firestore document keys.
- */
 export const normalizeBettorKey = (name: string): string => {
   return name.trim().toLowerCase();
 };
 
-/**
- * Retrieves an existing bet document by bettor name.
- */
 export const getBet = async (bettorName: string): Promise<BetDocument | null> => {
   const docId = normalizeBettorKey(bettorName);
   const docRef = doc(db, BETS_COLLECTION, docId);
@@ -35,9 +30,6 @@ export const getBet = async (bettorName: string): Promise<BetDocument | null> =>
   return null;
 };
 
-/**
- * Saves or merges a bet document into Firestore.
- */
 export const saveBet = async (
   bettorName: string,
   predictions: Record<string, Team>
@@ -57,9 +49,12 @@ export const saveBet = async (
   );
 };
 
-/**
- * Subscribes to real-time changes on the bets collection.
- */
+export const deleteBet = async (bettorName: string): Promise<void> => {
+  const docId = normalizeBettorKey(bettorName);
+  const docRef = doc(db, BETS_COLLECTION, docId);
+  await deleteDoc(docRef);
+};
+
 export const subscribeToBets = (
   callback: (bets: BetDocument[]) => void,
   onError?: (error: Error) => void
