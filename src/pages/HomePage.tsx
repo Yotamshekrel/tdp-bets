@@ -13,6 +13,7 @@ import {
   Users,
   Trophy,
   Save,
+  RotateCcw,
 } from 'lucide-react';
 import { PromptModal, ConfirmModal } from '../components/Modal';
 import {
@@ -20,6 +21,7 @@ import {
   deleteBet,
   getOfficialResults,
   saveOfficialResults,
+  deleteOfficialResults,
 } from '../services/db-service';
 import { BetDocument, Team, ToastMessage } from '../types';
 import { TDP_MEMBERS, TEAMS, TEAM_STYLES } from '../constants/config';
@@ -41,6 +43,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onShowToast }) => {
   const [officialPlacements, setOfficialPlacements] = useState<Record<string, Team>>({});
   const [isPublished, setIsPublished] = useState(false);
   const [savingOfficial, setSavingOfficial] = useState(false);
+  const [isResetOfficialModalOpen, setIsResetOfficialModalOpen] = useState(false);
 
   useEffect(() => {
     if (!isAdminOpen) return;
@@ -53,12 +56,19 @@ export const HomePage: React.FC<HomePageProps> = ({ onShowToast }) => {
       }
     );
 
-    getOfficialResults().then((res) => {
-      if (res) {
-        setOfficialPlacements(res.predictions || {});
-        setIsPublished(res.isPublished || false);
-      }
-    });
+    getOfficialResults()
+      .then((res) => {
+        if (res) {
+          setOfficialPlacements(res.predictions || {});
+          setIsPublished(res.isPublished || false);
+        } else {
+          setOfficialPlacements({});
+          setIsPublished(false);
+        }
+      })
+      .catch((err) => {
+        console.error('Error fetching official results:', err);
+      });
 
     return () => unsubscribe();
   }, [isAdminOpen]);
@@ -109,13 +119,32 @@ export const HomePage: React.FC<HomePageProps> = ({ onShowToast }) => {
           : 'תוצאות האמת נשמרו כטיוטה (לא פורסמו עדיין).',
       });
     } catch (err) {
-      console.error(err);
+      console.error('Save official results failed:', err);
       onShowToast({
         type: 'error',
-        message: 'שגיאה בשמירת תוצאות האמת.',
+        message: 'שגיאה בשמירת תוצאות האמת. אנא נסה שוב.',
       });
     } finally {
       setSavingOfficial(false);
+    }
+  };
+
+  const handleResetOfficialResults = async () => {
+    try {
+      await deleteOfficialResults();
+      setOfficialPlacements({});
+      setIsPublished(false);
+      setIsResetOfficialModalOpen(false);
+      onShowToast({
+        type: 'success',
+        message: 'תוצאות האמת נמחקו ואופסו בהצלחה. לוח המובילים חזר להיות מוסתר.',
+      });
+    } catch (err) {
+      console.error('Reset official results failed:', err);
+      onShowToast({
+        type: 'error',
+        message: 'שגיאה באיפוס תוצאות האמת.',
+      });
     }
   };
 
@@ -220,7 +249,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onShowToast }) => {
               </div>
               <div>
                 <h3 className="text-lg font-bold text-slate-100">פאנל ניהול (Admin Settings)</h3>
-                <p className="text-xs text-slate-400">ניהול הימורים והזנת תוצאות אמת</p>
+                <p className="text-xs text-slate-400">ניהול הימורים, עריכה והזנת תוצאות אמת</p>
               </div>
             </div>
 
@@ -244,7 +273,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onShowToast }) => {
                 }`}
               >
                 <Trophy className="w-4 h-4 text-amber-300" />
-                הזנת תוצאות אמת {isPublished && '(מפורסם)'}
+                הזנת ועריכת תוצאות אמת {isPublished && '(מפורסם)'}
               </button>
             </div>
 
@@ -332,7 +361,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onShowToast }) => {
                   </label>
                 </div>
 
-                <div className="overflow-y-auto flex-1 space-y-2 pr-1 max-h-[350px]">
+                <div className="overflow-y-auto flex-1 space-y-2 pr-1 max-h-[340px]">
                   {TDP_MEMBERS.map((member) => {
                     const currentTeam = officialPlacements[member];
                     return (
@@ -361,7 +390,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onShowToast }) => {
                                 className={`py-1 px-2 rounded-lg text-[11px] font-semibold border transition-all ${
                                   isSelected
                                     ? style.active
-                                    : `${style.bg} ${style.text} ${style.border} hover:opacity-90`
+                                    : `${style.bg} ${style.text} ${style.border}`
                                 }`}
                               >
                                 {team}
@@ -374,15 +403,28 @@ export const HomePage: React.FC<HomePageProps> = ({ onShowToast }) => {
                   })}
                 </div>
 
-                <button
-                  type="button"
-                  onClick={handleSaveOfficialResults}
-                  disabled={savingOfficial}
-                  className="w-full py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-amber-600/25 transition-all"
-                >
-                  <Save className="w-4 h-4" />
-                  {savingOfficial ? 'שומר תוצאות אמת...' : 'שמור תוצאות אמת'}
-                </button>
+                <div className="flex gap-2 pt-2 border-t border-slate-800">
+                  {officialCompletedCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setIsResetOfficialModalOpen(true)}
+                      className="px-4 py-2.5 rounded-xl bg-rose-500/15 text-rose-400 hover:bg-rose-500/25 border border-rose-500/30 text-xs font-bold flex items-center justify-center gap-1.5 transition-all"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      איפוס / מחיקה
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handleSaveOfficialResults}
+                    disabled={savingOfficial}
+                    className="flex-1 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-amber-600/25 transition-all"
+                  >
+                    <Save className="w-4 h-4" />
+                    {savingOfficial ? 'שומר תוצאות אמת...' : 'שמור תוצאות אמת'}
+                  </button>
+                </div>
               </div>
             )}
 
@@ -408,6 +450,17 @@ export const HomePage: React.FC<HomePageProps> = ({ onShowToast }) => {
         isDestructive={true}
         onConfirm={handleDeleteBet}
         onCancel={() => setBetToDelete(null)}
+      />
+
+      <ConfirmModal
+        isOpen={isResetOfficialModalOpen}
+        title="איפוס ומחיקת תוצאות האמת"
+        message="האם אתה בטוח שברצונך למחוק ולאפס את כל תוצאות האמת? פעולה זו תבטל את פרסום תוצאות האמת, ולוח המובילים והציונים יחזרו להיות מוסתרים עבור כל המשתמשים."
+        confirmLabel="כן, אפס תוצאות"
+        cancelLabel="ביטול"
+        isDestructive={true}
+        onConfirm={handleResetOfficialResults}
+        onCancel={() => setIsResetOfficialModalOpen(false)}
       />
     </div>
   );

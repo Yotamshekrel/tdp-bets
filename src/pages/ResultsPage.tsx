@@ -18,6 +18,7 @@ import {
   XCircle,
   ChevronDown,
   ChevronUp,
+  Sparkles,
 } from 'lucide-react';
 
 interface ResultsPageProps {
@@ -33,7 +34,7 @@ export const ResultsPage: React.FC<ResultsPageProps> = ({ onShowToast }) => {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // ניהול לשוניות ראשיות
+  // לשוניות ראשיות
   const [mainTab, setMainTab] = useState<MainTab>('summary');
   const [summarySubTab, setSummarySubTab] = useState<SummarySubTab>('roster');
 
@@ -43,8 +44,11 @@ export const ResultsPage: React.FC<ResultsPageProps> = ({ onShowToast }) => {
   // חבר נבחר עבור גרף העמודות
   const [selectedMember, setSelectedMember] = useState<TDPMember>(TDP_MEMBERS[0]);
 
-  // מהמר שנפתח לראות את פירוט הדיוק שלו
+  // מהמר שנפתח בלוח המובילים לצפייה בפירוט
   const [expandedBettor, setExpandedBettor] = useState<string | null>(null);
+
+  // מתג לצמצום או הרחבת כרטיסיית תוצאות האמת
+  const [showOfficialRoster, setShowOfficialRoster] = useState(true);
 
   useEffect(() => {
     let betsLoaded = false;
@@ -100,6 +104,28 @@ export const ResultsPage: React.FC<ResultsPageProps> = ({ onShowToast }) => {
       officialResults.isPublished &&
       Object.keys(officialResults.predictions || {}).length > 0
   );
+
+  // חלוקת חברי המחזור לחטיבות לפי תוצאות האמת (לתצוגה מהירה)
+  const officialTeamRosters = useMemo(() => {
+    if (!isOfficialPublished || !officialResults) return null;
+
+    const rosters: Record<Team, TDPMember[]> = {
+      Consumer: [],
+      Levelup: [],
+      Netcom: [],
+      Artemis: [],
+      Dispatch: [],
+    };
+
+    TDP_MEMBERS.forEach((member) => {
+      const realTeam = officialResults.predictions[member];
+      if (realTeam && rosters[realTeam]) {
+        rosters[realTeam].push(member);
+      }
+    });
+
+    return rosters;
+  }, [officialResults, isOfficialPublished]);
 
   // חישוב קולות לפי חבר
   const memberStats = useMemo(() => {
@@ -230,9 +256,7 @@ export const ResultsPage: React.FC<ResultsPageProps> = ({ onShowToast }) => {
       };
     });
 
-    // מיון יורד לפי כמות הפגיעות
     scores.sort((a, b) => b.correctCount - a.correctCount);
-
     return scores;
   }, [bets, officialResults, isOfficialPublished]);
 
@@ -248,26 +272,82 @@ export const ResultsPage: React.FC<ResultsPageProps> = ({ onShowToast }) => {
       />
 
       <main className="max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 flex-1 flex flex-col gap-6">
-        {/* באנר הכרזה כאשר תוצאות האמת מפורסמות */}
-        {isOfficialPublished && (
-          <div className="flex items-center justify-between gap-3 p-4 rounded-2xl bg-gradient-to-r from-amber-500/20 via-indigo-500/20 to-purple-500/20 border border-amber-500/40 shadow-lg">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-300">
-                <Trophy className="w-6 h-6" />
+        {/* כרטיסיית תוצאות האמת הרשמיות - מוצגת בראש העמוד לצפייה מהירה */}
+        {isOfficialPublished && officialTeamRosters && (
+          <div className="bg-slate-850 border border-amber-500/40 rounded-2xl p-5 shadow-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-xl bg-amber-500/20 text-amber-300">
+                  <Trophy className="w-6 h-6" />
+                </div>
+                <div>
+                  <h2 className="text-base sm:text-lg font-black text-white flex items-center gap-2">
+                    <span>השיבוצים הרשמיים של המחזור (תוצאות אמת)</span>
+                    <Sparkles className="w-4 h-4 text-amber-400" />
+                  </h2>
+                  <p className="text-xs text-slate-400">
+                    חלוקת 18 חברי ה-TDP לחטיבות כפי שפורסמה רשמית
+                  </p>
+                </div>
               </div>
-              <div>
-                <h2 className="text-base font-bold text-white">תוצאות האמת פורסמו! 🏆</h2>
-                <p className="text-xs text-slate-300">
-                  השיבוצים הרשמיים במערכת. צפו בדירוג המשתתפים ובציון הדיוק של כל מהמר!
-                </p>
-              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowOfficialRoster(!showOfficialRoster)}
+                className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-white border border-slate-700 transition-colors flex items-center gap-1"
+              >
+                <span>{showOfficialRoster ? 'צמצם' : 'הרחב'}</span>
+                {showOfficialRoster ? (
+                  <ChevronUp className="w-4 h-4" />
+                ) : (
+                  <ChevronDown className="w-4 h-4" />
+                )}
+              </button>
             </div>
-            <button
-              onClick={() => setMainTab('leaderboard')}
-              className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-md transition-all whitespace-nowrap"
-            >
-              לדירוג המלא
-            </button>
+
+            {showOfficialRoster && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 pt-2">
+                {TEAMS.map((team) => {
+                  const members = officialTeamRosters[team] || [];
+                  const style = TEAM_STYLES[team];
+
+                  return (
+                    <div
+                      key={team}
+                      className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 flex flex-col gap-2"
+                    >
+                      <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                        <span
+                          className={`px-2.5 py-0.5 rounded-lg text-xs font-bold border ${style.bg} ${style.text} ${style.border}`}
+                        >
+                          {team}
+                        </span>
+                        <span className="text-[11px] font-mono text-slate-400">
+                          {members.length}
+                        </span>
+                      </div>
+
+                      <div className="space-y-1">
+                        {members.length === 0 ? (
+                          <span className="text-[11px] text-slate-500 italic">אין שיבוצים</span>
+                        ) : (
+                          members.map((m) => (
+                            <div
+                              key={m}
+                              dir="rtl"
+                              className="text-xs font-bold text-slate-200 bg-slate-800/60 px-2 py-1 rounded-lg flex items-center justify-between"
+                            >
+                              <span>{m}</span>
+                              <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -384,7 +464,7 @@ export const ResultsPage: React.FC<ResultsPageProps> = ({ onShowToast }) => {
                             <span>{item.bettorName}</span>
                             {rank === 1 && (
                               <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold">
-                                מוביל!
+                                מקום ראשון!
                               </span>
                             )}
                           </div>

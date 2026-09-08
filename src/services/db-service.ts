@@ -14,7 +14,7 @@ import { db } from './firebase';
 import { BetDocument, OfficialResultsDocument, Team } from '../types';
 
 const BETS_COLLECTION = 'bets';
-export const OFFICIAL_RESULTS_DOC_ID = '__official_results__';
+export const OFFICIAL_RESULTS_DOC_ID = 'official_results';
 
 export const normalizeBettorKey = (name: string): string => {
   return name.trim().toLowerCase();
@@ -72,7 +72,7 @@ export const subscribeToBets = (
       snapshot.forEach((docSnap) => {
         if (docSnap.id !== OFFICIAL_RESULTS_DOC_ID) {
           const data = docSnap.data() as BetDocument;
-          if (data.bettorName && data.bettorName !== OFFICIAL_RESULTS_DOC_ID) {
+          if (data.bettorName && normalizeBettorKey(data.bettorName) !== OFFICIAL_RESULTS_DOC_ID) {
             bets.push(data);
           }
         }
@@ -101,16 +101,29 @@ export const saveOfficialResults = async (
   isPublished: boolean
 ): Promise<void> => {
   const docRef = doc(db, BETS_COLLECTION, OFFICIAL_RESULTS_DOC_ID);
+
+  const cleanPredictions: Record<string, Team> = {};
+  for (const [key, val] of Object.entries(predictions)) {
+    if (val) {
+      cleanPredictions[key] = val;
+    }
+  }
+
   await setDoc(
     docRef,
     {
       bettorName: OFFICIAL_RESULTS_DOC_ID,
-      predictions,
+      predictions: cleanPredictions,
       isPublished,
       updatedAt: serverTimestamp(),
     },
     { merge: true }
   );
+};
+
+export const deleteOfficialResults = async (): Promise<void> => {
+  const docRef = doc(db, BETS_COLLECTION, OFFICIAL_RESULTS_DOC_ID);
+  await deleteDoc(docRef);
 };
 
 export const subscribeToOfficialResults = (
