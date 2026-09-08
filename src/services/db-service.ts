@@ -11,9 +11,10 @@ import {
   Unsubscribe,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { BetDocument, Team } from '../types';
+import { BetDocument, OfficialResultsDocument, Team } from '../types';
 
 const BETS_COLLECTION = 'bets';
+export const OFFICIAL_RESULTS_DOC_ID = '__official_results__';
 
 export const normalizeBettorKey = (name: string): string => {
   return name.trim().toLowerCase();
@@ -21,6 +22,8 @@ export const normalizeBettorKey = (name: string): string => {
 
 export const getBet = async (bettorName: string): Promise<BetDocument | null> => {
   const docId = normalizeBettorKey(bettorName);
+  if (docId === OFFICIAL_RESULTS_DOC_ID) return null;
+
   const docRef = doc(db, BETS_COLLECTION, docId);
   const docSnap = await getDoc(docRef);
 
@@ -67,12 +70,66 @@ export const subscribeToBets = (
     (snapshot) => {
       const bets: BetDocument[] = [];
       snapshot.forEach((docSnap) => {
-        bets.push(docSnap.data() as BetDocument);
+        if (docSnap.id !== OFFICIAL_RESULTS_DOC_ID) {
+          const data = docSnap.data() as BetDocument;
+          if (data.bettorName && data.bettorName !== OFFICIAL_RESULTS_DOC_ID) {
+            bets.push(data);
+          }
+        }
       });
       callback(bets);
     },
     (error) => {
       console.error('Firestore listener error:', error);
+      if (onError) onError(error);
+    }
+  );
+};
+
+export const getOfficialResults = async (): Promise<OfficialResultsDocument | null> => {
+  const docRef = doc(db, BETS_COLLECTION, OFFICIAL_RESULTS_DOC_ID);
+  const docSnap = await getDoc(docRef);
+
+  if (docSnap.exists()) {
+    return docSnap.data() as OfficialResultsDocument;
+  }
+  return null;
+};
+
+export const saveOfficialResults = async (
+  predictions: Record<string, Team>,
+  isPublished: boolean
+): Promise<void> => {
+  const docRef = doc(db, BETS_COLLECTION, OFFICIAL_RESULTS_DOC_ID);
+  await setDoc(
+    docRef,
+    {
+      bettorName: OFFICIAL_RESULTS_DOC_ID,
+      predictions,
+      isPublished,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+};
+
+export const subscribeToOfficialResults = (
+  callback: (results: OfficialResultsDocument | null) => void,
+  onError?: (error: Error) => void
+): Unsubscribe => {
+  const docRef = doc(db, BETS_COLLECTION, OFFICIAL_RESULTS_DOC_ID);
+
+  return onSnapshot(
+    docRef,
+    (docSnap) => {
+      if (docSnap.exists()) {
+        callback(docSnap.data() as OfficialResultsDocument);
+      } else {
+        callback(null);
+      }
+    },
+    (error) => {
+      console.error('Official results listener error:', error);
       if (onError) onError(error);
     }
   );

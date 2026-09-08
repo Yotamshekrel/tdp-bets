@@ -28,6 +28,13 @@ export interface BetDocument {
   updatedAt: Timestamp | Date;
 }
 
+export interface OfficialResultsDocument {
+  bettorName?: string;
+  predictions: Record<string, Team>;
+  isPublished: boolean;
+  updatedAt?: Timestamp | Date;
+}
+
 export interface ToastMessage {
   id: string;
   type: 'success' | 'error' | 'info';
