@@ -2,15 +2,18 @@ import { initializeApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
-  apiKey: "REDACTED_ROTATE_THIS_KEY",
-  authDomain: "tdp-bet.firebaseapp.com",
-  databaseURL: "https://tdp-bet-default-rtdb.europe-west1.firebasedatabase.app",
-  projectId: "tdp-bet",
-  storageBucket: "tdp-bet.firebasestorage.app",
-  messagingSenderId: "685381903619",
-  appId: "1:685381903619:web:40815a118b857c071f7536"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
+
+if (!firebaseConfig.apiKey) {
+  throw new Error('Missing VITE_FIREBASE_API_KEY. Copy .env.example to .env.local and fill it in.');
+}
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
-// bla
